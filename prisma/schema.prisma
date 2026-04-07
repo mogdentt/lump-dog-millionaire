@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  PROJECT_MANAGER
+  ENGINEER
+  CLIENT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          Role      @default(ENGINEER)
+  hourlyRate    Decimal   @default(0) @db.Decimal(10, 2)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  managedProjects Project[]   @relation("ProjectManager")
+  timeEntries     TimeEntry[]
+  changeOrders    ChangeOrder[]
+  accounts        Account[]
+  sessions        Session[]
+
+  @@map("users")
+}
+
+// ─── NextAuth Models ─────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Projects ────────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model Project {
+  id               String        @id @default(cuid())
+  name             String
+  description      String?       @db.Text
+  clientName       String
+  totalLumpSum     Decimal       @db.Decimal(12, 2)
+  contingencyBudget Decimal      @default(0) @db.Decimal(12, 2)
+  startDate        DateTime
+  endDate          DateTime
+  status           ProjectStatus @default(PLANNING)
+  projectManagerId String
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  projectManager User          @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  milestones     Milestone[]
+  timeEntries    TimeEntry[]
+  changeOrders   ChangeOrder[]
+
+  @@map("projects")
+}
+
+// ─── Milestones / Deliverables ───────────────────────────────────────────────
+
+enum MilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  REVIEW
+  APPROVED
+}
+
+model Milestone {
+  id              String          @id @default(cuid())
+  title           String
+  description     String?         @db.Text
+  percentageOfFee Decimal         @db.Decimal(5, 2)
+  dueDate         DateTime
+  status          MilestoneStatus @default(NOT_STARTED)
+  projectId       String
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("milestones")
+}
+
+// ─── Time Entries ────────────────────────────────────────────────────────────
+
+model TimeEntry {
+  id          String   @id @default(cuid())
+  hours       Decimal  @db.Decimal(6, 2)
+  hourlyRate  Decimal  @db.Decimal(10, 2)
+  description String?  @db.Text
+  date        DateTime
+  userId      String
+  projectId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("time_entries")
+}
+
+// ─── Change Orders ───────────────────────────────────────────────────────────
+
+enum ChangeOrderStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ChangeOrder {
+  id          String            @id @default(cuid())
+  title       String
+  description String?           @db.Text
+  addedCost   Decimal           @db.Decimal(12, 2)
+  addedDays   Int               @default(0)
+  status      ChangeOrderStatus @default(PENDING)
+  projectId   String
+  submittedBy String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submitter User    @relation(fields: [submittedBy], references: [id])
+
+  @@map("change_orders")
+}
